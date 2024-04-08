@@ -1,0 +1,135 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: >
+  Resources for different ways to trigger events with sub-minute intervals
+
+Globals:
+  Function:
+    Runtime: nodejs20.x
+    Architectures:
+      - arm64
+    Tracing: Active
+    Timeout: 15
+    MemorySize: 1024
+    Handler: index.handler
+    Environment:
+      Variables:
+        AWS_NODEJS_CONNECTION_REUSE_ENABLED: 1
+
+Resources:
+  HeartbeatFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: functions/heartbeat
+      Policies:
+        - AWSLambdaBasicExecutionRole
+    Metadata:
+      BuildMethod: esbuild
+      BuildProperties:
+        Format: esm
+        Minify: false
+        OutExtension:
+          - .js=.mjs
+        Target: es2020
+        Sourcemap: false
+        EntryPoints:
+          - index.mjs
+        Banner:
+          - js=import { createRequire } from 'module'; const require = createRequire(import.meta.url);
+
+  HeartbeatImplicitStateMachine:
+    Type: AWS::Serverless::StateMachine
+    Properties:
+      Type: STANDARD
+      DefinitionUri: state machines/heartbeat-implicit.asl.json
+      DefinitionSubstitutions:
+        LambdaInvoke: !Sub arn:${AWS::Partition}:states:::lambda:invoke
+        HeartbeatFunction: !GetAtt HeartbeatFunction.Arn
+      Policies:
+        - Version: 2012-10-17
+          Statement:
+            - Effect: Allow
+              Action: lambda:InvokeFunction
+              Resource: !GetAtt HeartbeatFunction.Arn
+
+  HeartbeatExplicitStateMachine:
+    Type: AWS::Serverless::StateMachine
+    Properties:
+      Type: STANDARD
+      DefinitionUri: state machines/heartbeat-explicit.asl.json
+      DefinitionSubstitutions:
+        LambdaInvoke: !Sub arn:${AWS::Partition}:states:::lambda:invoke
+        HeartbeatFunction: !GetAtt HeartbeatFunction.Arn
+      Policies:
+        - Version: 2012-10-17
+          Statement:
+            - Effect: Allow
+              Action: lambda:InvokeFunction
+              Resource: !GetAtt HeartbeatFunction.Arn
+
+  HeartbeatScheduleRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - scheduler.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: HeartbeatPolicy
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action: states:StartExecution
+                Resource: !GetAtt HeartbeatExplicitStateMachine.Arn
+
+  HeartbeatSchedule:
+    Type: AWS::Scheduler::Schedule
+    Properties:
+      Description: Trigger the HeartbeatExplicit State Machine every minute
+      FlexibleTimeWindow:
+        Mode: 'OFF'
+      Name: HeartbeatExplicitSchedule
+      ScheduleExpression: rate(1 minute)
+      Target:
+        Arn: !GetAtt HeartbeatExplicitStateMachine.Arn
+        RoleArn: !GetAtt HeartbeatScheduleRole.Arn
+
+  EnableDisableScheduleStateMachine:
+    Type: AWS::Serverless::StateMachine
+    Properties:
+      Type: EXPRESS
+      DefinitionUri: state machines/enable-disable-schedule.asl.json
+      DefinitionSubstitutions:
+        GetSchedule: !Sub arn:${AWS::Partition}:states:::aws-sdk:scheduler:getSchedule
+        UpdateSchedule: !Sub arn:aws:states:::aws-sdk:scheduler:updateSchedule
+        ScheduleName: !Ref HeartbeatSchedule
+      Policies:
+        - Version: 2012-10-17
+          Statement:
+            - Effect: Allow
+              Action:
+                - scheduler:GetSchedule
+                - scheduler:UpdateSchedule
+              Resource: !GetAtt HeartbeatSchedule.Arn
+            - Effect: Allow
+              Action: iam:PassRole
+              Resource: !GetAtt HeartbeatScheduleRole.Arn
+      Events:
+        Enable:
+          Type: ScheduleV2
+          Properties:
+            ScheduleExpression: cron(0 6 * * ? *)
+            ScheduleExpressionTimezone: America/Chicago
+            Input: "{\"state\":\"ENABLED\"}"
+        Disable:
+          Type: ScheduleV2
+          Properties:
+            ScheduleExpression: cron(0 20 * * ? *)
+            ScheduleExpressionTimezone: America/Chicago
+            Input: "{\"state\":\"DISABLED\"}"
+

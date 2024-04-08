@@ -1,0 +1,54 @@
+{
+  "Comment": "Iterate over a heartbeat function N times",
+  "StartAt": "Map",
+  "States": {
+    "Map": {
+      "Type": "Map",
+      "ItemProcessor": {
+        "ProcessorConfig": {
+          "Mode": "INLINE"
+        },
+        "StartAt": "Heartbeat",
+        "States": {
+          "Heartbeat": {
+            "Type": "Task",
+            "Resource": "${LambdaInvoke}",
+            "Parameters": {
+              "Payload": {
+                "source": "implicit state machine"
+              },
+              "FunctionName": "${HeartbeatFunction}"
+            },
+            "Retry": [
+              {
+                "ErrorEquals": [
+                  "Lambda.ServiceException",
+                  "Lambda.AWSLambdaException",
+                  "Lambda.SdkClientException",
+                  "Lambda.TooManyRequestsException"
+                ],
+                "IntervalSeconds": 1,
+                "MaxAttempts": 3,
+                "BackoffRate": 2
+              }
+            ],
+            "Next": "Wait",
+            "ResultPath": null
+          },
+          "Wait": {
+            "Type": "Wait",
+            "SecondsPath": "$.waitSeconds",
+            "End": true
+          }
+        }
+      },
+      "End": true,
+      "ItemsPath": "$$.Execution.Input.iterations",
+      "MaxConcurrency": 1,
+      "ItemSelector": {
+        "key.$": "$$.Map.Item.Value",
+        "waitSeconds.$": "$$.Execution.Input.waitSeconds"
+      }
+    }
+  }
+}

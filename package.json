@@ -1,0 +1,10 @@
+{
+  "name": "sub-minute-serverless-schedules",
+  "version": "1.0.0",
+  "description": "Different ways to trigger an action in sub minute intervals",
+  "author": "allenheltondev",
+  "license": "ISC",
+  "devDependencies": {
+    "@aws-sdk/client-sqs": "^3.525.0"
+  }
+}

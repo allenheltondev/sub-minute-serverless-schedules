@@ -1,0 +1,61 @@
+{
+  "Comment": "Runs the heartbeat function twice in 30 second intervals",
+  "StartAt": "Heartbeat",
+  "States": {
+    "Heartbeat": {
+      "Type": "Task",
+      "Resource": "${LambdaInvoke}",
+      "OutputPath": null,
+      "Parameters": {
+        "Payload": {
+          "source": "implicit state machine"
+        },
+        "FunctionName": "${HeartbeatFunction}"
+      },
+      "Retry": [
+        {
+          "ErrorEquals": [
+            "Lambda.ServiceException",
+            "Lambda.AWSLambdaException",
+            "Lambda.SdkClientException",
+            "Lambda.TooManyRequestsException"
+          ],
+          "IntervalSeconds": 1,
+          "MaxAttempts": 3,
+          "BackoffRate": 2
+        }
+      ],
+      "Next": "Wait 30 Seconds"
+    },
+    "Wait 30 Seconds": {
+      "Type": "Wait",
+      "Seconds": 30,
+      "Next": "Heartbeat Again"
+    },
+    "Heartbeat Again": {
+      "Type": "Task",
+      "Resource": "${LambdaInvoke}",
+      "OutputPath": null,
+      "Parameters": {
+        "Payload": {
+          "source": "implicit state machine"
+        },
+        "FunctionName": "${HeartbeatFunction}"
+      },
+      "Retry": [
+        {
+          "ErrorEquals": [
+            "Lambda.ServiceException",
+            "Lambda.AWSLambdaException",
+            "Lambda.SdkClientException",
+            "Lambda.TooManyRequestsException"
+          ],
+          "IntervalSeconds": 1,
+          "MaxAttempts": 3,
+          "BackoffRate": 2
+        }
+      ],
+      "End": true
+    }
+  }
+}
